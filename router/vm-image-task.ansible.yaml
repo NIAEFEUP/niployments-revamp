@@ -83,6 +83,11 @@
   ansible.builtin.command:
     cmd: virt-customize -a /srv/vm/disks/router/router.qcow2 --run-command 'apt-get install -y avahi-daemon avahi-utils'
 
+- name: Add host private key files
+  become: true
+  ansible.builtin.command:
+    cmd: virt-customize -a /srv/vm/disks/router/router.qcow2 --run-command 'ssh-keygen -A'
+
 - block:
     - name: "Mount router image"
       become: true
@@ -107,8 +112,8 @@
     - name: Copy avahi dhcp fallback to vm
       become: true
       ansible.builtin.copy:
-        src: templates/00-ipv4ll.network
-        dest: /mnt/router/etc/systemd/network/00-ipv4ll.network
+        src: templates/99-ipv4ll.network
+        dest: /mnt/router/etc/systemd/network/99-ipv4ll.network
         mode: "644"
     - name: Copy interface network config to vm
       become: true
