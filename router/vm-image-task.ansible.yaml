@@ -30,6 +30,7 @@
     mode: "770"
     group: qemu
 - name: "Download router QCOW2 file"
+  retries: 3
   become: true
   ansible.builtin.get_url:
     url: https://cloud.debian.org/images/cloud/bookworm/20240211-1654/debian-12-generic-amd64-20240211-1654.qcow2
@@ -109,6 +110,11 @@
         dest: /mnt/router/home/ni/.ssh/authorized_keys
         remote_src: true
         mode: "644"
+    - name: Add ni user to sudoers password
+      become: true
+      ansible.builtin.copy:
+        dest: /mnt/router/etc/sudoers.d/dont-prompt-ni_user-for-sudo-password
+        content: 'ni ALL=(ALL) NOPASSWD:ALL'
     - name: Copy avahi dhcp fallback to vm
       become: true
       ansible.builtin.copy:

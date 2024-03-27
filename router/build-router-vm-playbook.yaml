@@ -2,8 +2,11 @@
   hosts: controlplane
   tasks:
     - name: Skip play if running in the development cluster
-      ansible.builtin.meta: end_host
       when: dev_cluster == "true"
+      ansible.builtin.meta: end_play
+    - name: Skip host if it doesnt have external_interface defined
+      when: external_interface is undefined
+      ansible.builtin.meta: end_host
     - name: Import router vars
       ansible.builtin.include_vars:
         file: "router-vars.json"
@@ -33,17 +36,34 @@
           name: ansible.utils.textfsm
           template_path: router/templates/lspci-parser.textfsm
         set_fact: pci_devices
+    - name: Remove dhcpcd persistance
+      become: true
+      ansible.builtin.lineinfile:
+        path: /etc/dhcpcd.conf
+        regexp: "^persistent"
+        line: "#persistent"
+      notify:
+        - Restart dhcpcd
+    - name: Remove external_interface from dhcpcd
+      become: true
+      ansible.builtin.lineinfile:
+        path: /etc/dhcpcd.conf
+        regexp: "^denyinterfaces.*"
+        line: "denyinterfaces {{ external_interface }}"
+      notify:
+        - Restart dhcpcd
+    - name: Flush handlers
+      ansible.builtin.meta: flush_handlers
+
     - name: Only include nodes that have suitable devices
       when: >
         (pci_devices | map(attribute="pciVendorDevice") | intersect(valid_nic_ids) | length) != 0
-        and external_interface is defined
       block:
         - name: Assign one public IP per router
           ansible.builtin.set_fact:
             assigned_network: "{{ external_eth_config[play_hosts.index(inventory_hostname)] }}"
           delegate_to: "{{ item }}"
-          # FIXME(luisd): not all controlplane will run routers we need to filter by hosts that have external_interface defined
-          with_items: "{{ groups['controlplane'] }}"
+          with_items: "{{ ansible_play_hosts }}"
 
         - name: Build new router VM
           when: '"libvirtd.service" not in ansible_facts.services or "routerVM" not in routervm_stat.list_vms'
@@ -63,9 +83,17 @@
                 pci_devices: "{{ pci_devices | selectattr('bus', 'equalto', external_interface_pci_device[0]['bus'])
                   | selectattr('device', 'equalto', external_interface_pci_device[0]['device'])
                   | selectattr('bus', 'equalto', external_interface_pci_device[0]['bus'])
-                   }}"        
+                   }}"
+            - name: Set external interface up
+              become: true
+              ansible.builtin.command:
+                cmd: "ip link set up {{ external_interface }}"
+              changed_when: true
+            # This might fail a few times until the interface comes up
             - name: Configure external ip to configure VM temporarily
               become: true
+              retries: 3
+              delay: 5
               ansible.builtin.command:
                 cmd: "ip addr add {{ assigned_network.ip + '/' + assigned_network.prefix }} dev {{ external_interface }}"
               changed_when: true
@@ -126,3 +154,8 @@
     - name: Update initramfs and reboot
       ansible.builtin.include_tasks:
         file: "update-initramfs-tasks.ansible.yaml"
+    - name: Restart dhcpcd
+      become: true
+      ansible.builtin.systemd:
+        name: dhcpcd
+        state: restarted
