@@ -1,4 +1,6 @@
 ---
+- name: Install Router VMs
+  ansible.builtin.import_playbook: router/build-router-vm-playbook.yaml
 - name: Create a set new SSH key for clusters and routers
   ansible.builtin.import_playbook: networking/add-ssh-key-to-nodes-playbook.yaml
 - name: Accept ssh keys for the first time
@@ -11,3 +13,5 @@
   ansible.builtin.import_playbook: networking/router-vrrp-playbook.yaml
 - name: Networking - Router Controlplane HA
   ansible.builtin.import_playbook: networking/controlplane-ha-playbook.yaml
+- name: Nodes - Enable EPEL repositories
+  ansible.builtin.import_playbook: node/add-epel-repos-playbook.yaml
